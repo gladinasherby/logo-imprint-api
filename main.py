@@ -1,5 +1,5 @@
 import numpy as np
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Body
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 import os
@@ -179,6 +179,69 @@ async def imprint_logo(
          raise HTTPException(status_code=500, detail="Failed to save processed image.")
     
     return FileResponse(filepath, media_type="image/png", background=BackgroundTask(cleanup_file, filepath))
+
+def decode_base64_image(base64_str: str) -> np.ndarray:
+    import cv2
+    import base64
+
+    if "," in base64_str:
+        base64_str = base64_str.split(",")[1]
+
+    image_bytes = base64.b64decode(base64_str)
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    image = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+
+    if image is None:
+        raise HTTPException(status_code=400, detail="Invalid base64 image")
+
+    return image
+
+def encode_image_to_base64(image: np.ndarray) -> str:
+    import cv2
+    import base64
+
+    success, buffer = cv2.imencode(".png", image)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to encode image")
+
+    # Return RAW base64 (best for Odoo / APIs)
+    return base64.b64encode(buffer).decode("utf-8")
+
+@app.post("/imprint-logo-base64")
+async def imprint_logo_base64(
+    product_image_base64: str = Body(..., embed=True),
+    logo_image_base64: str = Body(..., embed=True),
+    scale: float = Body(0.2),
+    opacity: float = Body(0.6),
+    position: str = Body("center")
+):
+    import cv2
+
+    valid_positions = {"center", "top-left", "top-right", "bottom-left", "bottom-right"}
+    if position not in valid_positions:
+        raise HTTPException(status_code=400, detail=f"Invalid position. Must be one of {valid_positions}")
+
+    if not (0.0 < scale <= 1.0):
+        raise HTTPException(status_code=400, detail="Scale must be between 0.0 and 1.0")
+
+    if not (0.0 <= opacity <= 1.0):
+        raise HTTPException(status_code=400, detail="Opacity must be between 0.0 and 1.0")
+
+    # ✅ Decode base64 → OpenCV images
+    prod_img = decode_base64_image(product_image_base64)
+    logo_img = decode_base64_image(logo_image_base64)
+
+    # Process (UNCHANGED)
+    prod_h, prod_w = prod_img.shape[:2]
+    logo_resized = resize_logo_proportional(logo_img, prod_w, scale)
+    result_img = apply_overlay(prod_img, logo_resized, position, opacity)
+
+    # ✅ Encode result → base64 (NO FILE SYSTEM)
+    result_base64 = encode_image_to_base64(result_img)
+
+    return {
+        "image_base64": result_base64
+    }
 
 if __name__ == "__main__":
     import uvicorn
