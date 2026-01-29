@@ -1,9 +1,7 @@
-import cv2
 import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
-import shutil
 import os
 import uuid
 
@@ -22,6 +20,7 @@ def cleanup_file(path: str):
         print(f"Error cleaning up file {path}: {e}")
 
 async def decode_image(file: UploadFile) -> np.ndarray:
+    import cv2
     """Reads an UploadFile and decodes it into an OpenCV image."""
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
@@ -31,6 +30,7 @@ async def decode_image(file: UploadFile) -> np.ndarray:
     return image
 
 def resize_logo_proportional(logo: np.ndarray, product_width: int, scale: float) -> np.ndarray:
+    import cv2
     """Resizes the logo based on the product width and scale factor."""
     if scale <= 0 or scale > 1:
         raise HTTPException(status_code=400, detail="Scale must be between 0 and 1.")
@@ -48,6 +48,7 @@ def resize_logo_proportional(logo: np.ndarray, product_width: int, scale: float)
     return resized
 
 def apply_overlay(product: np.ndarray, logo: np.ndarray, position: str, opacity: float) -> np.ndarray:
+    import cv2
     """Overlays the logo onto the product image with alpha blending."""
     
     prod_h, prod_w = product.shape[:2]
@@ -144,6 +145,7 @@ async def imprint_logo(
     opacity: float = Form(0.6),
     position: str = Form("center")
 ):
+    import cv2
     # Validation
     valid_positions = {"center", "top-left", "top-right", "bottom-left", "bottom-right"}
     if position not in valid_positions:
